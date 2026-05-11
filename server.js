@@ -1,8 +1,12 @@
+import express from "express";
+import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
 const API_BASE_URL = process.env.CHIC_API_URL || "http://localhost:3333/api";
+const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HOST = "0.0.0.0";
 
 async function api(path, init) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -33,9 +37,30 @@ function text(data) {
   };
 }
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const transport = new StreamableHTTPServerTransport();
 const server = new McpServer({
   name: "chic-schedule-mcp",
   version: "1.0.0",
+});
+
+app.get("/", (req, res) => {
+  res.json({ status: "MCP Online" });
+});
+
+app.post("/mcp", async (req, res) => {
+  try {
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    res.status(500).json({
+      jsonrpc: "2.0",
+      error: { code: -32603, message: error instanceof Error ? error.message : String(error) },
+      id: req.body?.id || null,
+    });
+  }
 });
 
 server.tool("listar_servicos", "Lista os servicos disponiveis no site.", {}, async () => {
@@ -133,5 +158,8 @@ server.tool(
   }
 );
 
-const transport = new StdioServerTransport();
 await server.connect(transport);
+
+app.listen(PORT, HOST, () => {
+  console.log(`MCP server online at http://${HOST}:${PORT}`);
+});
